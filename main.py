@@ -1,14 +1,21 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from agents import Runner
+from agents import Runner, SQLiteSession
 from Agent_com.main_agent import main_agent  # 👈 导入总指挥 Agent
 from monitor_hook import MonitorHooks  # 👈 导入控制台监控钩子
+
+DB_PATH = os.path.join("data", "conversations.db")
+os.makedirs("data", exist_ok=True)
+
 
 class ChatRequest(BaseModel):
     message: str
     user_id: str = 'user'
+    session_id: str = 'default'
 
 app = FastAPI(title="旅游大师智能体")
 monitor_hooks = MonitorHooks()
@@ -19,11 +26,13 @@ def home():
 
 @app.post("/chat")
 async def chat(req: ChatRequest):  # 👈 必须改为 async def
-    print(f"后台收到数据 req.message={req.message}")
+    print(f"后台收到数据 session_id={req.session_id} req.message={req.message}")
     
     try:
+        # 👈 按 session_id 隔离对话历史，实现多轮上下文
+        session = SQLiteSession(req.session_id, DB_PATH)
         # 👈 使用 await 调用智能体，并挂载监控钩子打印执行过程
-        result = await Runner.run(main_agent, req.message, hooks=monitor_hooks)
+        result = await Runner.run(main_agent, req.message, hooks=monitor_hooks, session=session)
         reply = result.final_output
     except Exception as e:
         print(f"Agent 运行错误: {e}")

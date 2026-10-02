@@ -23,6 +23,7 @@ ENV/
 video/*.wmv
 video/frames/
 _server*.log
+data/
 
 # ===== 工具产物 =====
 .trae-html-share-packages/

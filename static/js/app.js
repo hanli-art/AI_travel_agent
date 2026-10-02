@@ -171,7 +171,7 @@
       var response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, user_id: "user_001" }),
+        body: JSON.stringify({ message: text, user_id: "user_001", session_id: session.id }),
       });
       if (!response.ok) throw new Error("服务器错误：" + response.status);
 
