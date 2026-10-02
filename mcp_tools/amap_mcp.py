@@ -567,61 +567,122 @@ class RoutePlanMCP(BaseMCP):
     # 新增：获取原始JSON数据（不做Pydantic校验）
 
 class HotelSearchMCP(BaseMCP):
-    """酒店查询：根据城市、价格范围、入住人群类型、入住天数查询酒店"""
+    """酒店查询：按城市+地址周边搜索住宿 POI（名称/地址/价格/评分/距离）"""
     name: str = "hotel_m_mcp"
-    description: str = "输入城市+价格范围+入住人群类型+入住天数，返回酒店列表"
+    description: str = "输入城市+地址+价格区间，返回周边酒店列表（名称/地址/价格/评分）"
+    # 高德 POI 大类编码：100000=住宿服务
+    HOTEL_TYPE = "100000"
+    # 周边搜索半径（米）
+    SEARCH_RADIUS = 3000
+    # 最多返回酒店数
+    TOP_N = 5
 
-    async def execute(self, params:HotleSearchParms)->HotelSearchOutput:
-        city=params.city
-        price_min=params.price_min
-        price_max=params.price_max
-        crowd=params.crowd
-        stay_days=params.stay_days
-        address=params.address
-    # 2. 调用高德地理编码获取酒店位置
-        url="https://restapi.amap.com/v3/place/around"
-        params={
-            "key":AMAP_KEY,
-            "city":city,
-            "price_min":price_min,
-            "price_max":price_max,
-            "crowd":crowd,
-            "stay_days":stay_days,
-            "address":address,
-            "output":"json"
-        }
-        res=requests.get(url,params=params).json()
-        location=res["geocode"][0]["location"]
-        #3根据位置周搜索酒店列表
-        search_url = "https://restapi.amap.com/v3/place/around"
-        search_params={
-            "key":AMAP_KEY,
-            "city":city,
-            "price_min":price_min,
-            "price_max":price_max,
-            "crowd":crowd,
-            "stay_days":stay_days,
-            "location":location,
-            "radius":3000,
-            "output":"json"
-        }
-        search_res=requests.get(search_url,params=search_params).json()
-        # 4. 原始API数据映射为结构化输出Schema
-        hotel_list=[]
-        for poi in search_res.get("pois",[])[:5]:
-            hotel_item =SigleHotelItem(
-                hotel_name=poi.get("name","未知酒店"),
-                address=poi.get("address",""),
-                avg_price=(price_min+price_max)//2 ,
-                crowd=crowd
-            )
-            hotel_list.append(hotel_item)
-        output=HotelSearchOutput(
-            recommend_hotels=hotel_list,
-            city=city,
-            total_suggest=stay_days*price_max
+    @staticmethod
+    def clean_hotel_poi(poi: dict, crowd: Optional[str] = None) -> Optional[SigleHotelItem]:
+        """高德 POI → SigleHotelItem
+
+        biz_ext.rating 是评分、biz_ext.cost 是参考价。
+        高德多数酒店不返回报价（cost 为空列表），此时 price 置 None，绝不编造价格。
+        """
+        name = poi.get("name")
+        if not name:
+            return None
+        biz = poi.get("biz_ext") or {}
+        rating = biz.get("rating")
+        cost = biz.get("cost")
+        distance = poi.get("distance")
+        return SigleHotelItem(
+            hotel_name=name,
+            price=int(float(cost)) if cost else None,
+            score=float(rating) if rating else None,
+            distance_m=int(distance) if distance else None,
+            crowd=crowd,
+            address=poi.get("address") or None,
         )
-        return output
+
+    @staticmethod
+    def in_price_range(
+        price: Optional[int], price_min: Optional[int], price_max: Optional[int]
+    ) -> bool:
+        """无报价（price 为 None）视为价格不确定，保留；有报价时须落在区间内"""
+        if price is None:
+            return True
+        if price_min is not None and price < price_min:
+            return False
+        if price_max is not None and price > price_max:
+            return False
+        return True
+
+    async def execute(self, params: HotleSearchParms) -> HotelSearchOutput:
+        city = params.city
+        address = params.address or ""
+        # 1. 地理编码拿搜索中心点（address 为空时 GeomMCP 会回退用城市名）
+        location = await GeomMCP().execute(city, address)
+        # 2. 周边搜索住宿服务 POI：高德 place/around 不支持价格/人群参数，
+        #    价格区间只能本地过滤，人群仅作为标签透传
+        req_params = {
+            "key": AMAP_KEY,
+            "location": location,
+            "types": self.HOTEL_TYPE,
+            "radius": self.SEARCH_RADIUS,
+            "offset": 25,
+            "extensions": "all",
+            "output": "json",
+        }
+        res = requests.get(
+            "https://restapi.amap.com/v3/place/around", params=req_params
+        ).json()
+        if res.get("status") != "1":
+            raise ValueError(f"高德周边搜索返回错误：{res.get('info', res)}")
+
+        # 3. 清洗 POI 并按价格区间过滤（无报价的保留，避免过滤后为空）
+        hotels: List[SigleHotelItem] = []
+        for poi in res.get("pois", []):
+            item = self.clean_hotel_poi(poi, params.crowd)
+            if not item:
+                continue
+            if not self.in_price_range(item.price, params.price_min, params.price_max):
+                continue
+            hotels.append(item)
+
+        # 4. 排序取前 N：指定价格区间时优先展示有报价的酒店（否则会全被无报价的挤掉），
+        #    其余情况按评分降序，有评分的排在无评分之前
+        if params.price_min is not None or params.price_max is not None:
+            hotels.sort(key=lambda h: (h.price is not None, h.score or 0.0), reverse=True)
+        else:
+            hotels.sort(key=lambda h: (h.score is not None, h.score or 0.0), reverse=True)
+        hotels = hotels[: self.TOP_N]
+
+        return HotelSearchOutput(
+            recommend_hotels=hotels,
+            city=city,
+            total_suggest=self.build_suggest(city, address, hotels, params),
+        )
+
+    @staticmethod
+    def build_suggest(
+        city: str, address: str, hotels: List[SigleHotelItem], params: HotleSearchParms
+    ) -> str:
+        """生成入住总体建议（不编造价格，缺报价时明确说明）"""
+        scope = f"{city}{address}" if address else city
+        parts = [
+            f"已在{scope}周边 {HotelSearchMCP.SEARCH_RADIUS} 米内找到 {len(hotels)} 家住宿推荐。"
+        ]
+        priced = [h.price for h in hotels if h.price is not None]
+        if priced:
+            if min(priced) == max(priced):
+                parts.append(f"其中高德提供报价的酒店约 {priced[0]} 元/晚。")
+            else:
+                parts.append(f"其中高德提供报价的酒店约 {min(priced)}-{max(priced)} 元/晚。")
+        else:
+            parts.append("高德未提供这些酒店的挂牌报价，价格请以实际预订为准。")
+        if params.stay_days:
+            parts.append(f"按入住 {params.stay_days} 天安排，请结合报价核算总预算。")
+        if params.price_min is not None or params.price_max is not None:
+            parts.append("列表已优先展示有报价的酒店，其余按评分排序。")
+        else:
+            parts.append("列表已按评分从高到低排序。")
+        return "".join(parts)
 
 
 

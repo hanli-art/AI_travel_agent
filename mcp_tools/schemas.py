@@ -108,7 +108,9 @@ class BudgetSearchParms(BaseModel):
 #=======结构化输出模型（强制大模型返回标准JSON)
 class SigleHotelItem(BaseModel):
     hotel_name: str = Field(description="酒店名称")
-    price: int = Field(description="酒店价格,单位：元/人")
+    price: Optional[int] = Field(default=None, description="酒店参考价,单位：元/晚（高德未提供时为 None）")
+    score: Optional[float] = Field(default=None, description="酒店评分（0-5，高德未提供时为 None）")
+    distance_m: Optional[int] = Field(default=None, description="距搜索参考点的距离,单位：米")
     crowd: Optional[str] = Field(default=None, description="入住人群类型,如：学生、教师、学生等")
     address: Optional[str] = Field(default=None, description="酒店地址")
 
