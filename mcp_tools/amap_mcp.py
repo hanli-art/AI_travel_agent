@@ -29,11 +29,16 @@ class GeomMCP(BaseMCP):
     description: str = "输入城市+地址，返回经纬度"
 
     async def execute(self, city: str, address: str = ""):
+        """返回经纬度（location）
+
+        高德地理编码要求 address 非空，否则返回 INVALID_PARAMS；
+        路线规划常只给城市名，故 address 为空时回退用城市名当地址。
+        """
         url = "https://restapi.amap.com/v3/geocode/geo"
         req_params = {
             "key": AMAP_KEY,
             "city": city,
-            "address": address,
+            "address": address or city,
             "output": "json",
         }
         res = requests.get(url, params=req_params).json()
