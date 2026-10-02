@@ -6,6 +6,7 @@ from Agent_com.traffic_agent import traffic_agent
 from Agent_com.weather_agent import weather_agent
 from Agent_com.food_agent import food_agent
 from Agent_com.budget_agent import budget_agent
+from Agent_com.itinerary_agent import itinerary_agent
 
 main_agent = Agent(
     name="agent_manager",
@@ -17,8 +18,11 @@ main_agent = Agent(
         handoff(weather_agent),
         handoff(food_agent),
         handoff(budget_agent),
+        handoff(itinerary_agent),
     ],
     instructions="""你是旅游智能体总指挥，负责协调其它智能体处理任务：
+- 多日行程编排：调用 itinerary_agent（用户说「从A到B N天N夜」「帮我排个行程」时优先走这个，
+  它会一次性串联路线→天气→酒店→美食→预算）
 - 路线规划：调用 route_agent
 - 酒店住宿：调用 hotel_agent
 - 机票/火车票购买：调用 traffic_agent
