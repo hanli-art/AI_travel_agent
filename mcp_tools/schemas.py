@@ -122,13 +122,16 @@ class HotelSearchOutput(BaseModel):
 
 
 class SingleFoodItem(BaseModel):
-    food_name: str = Field(description="美食名称")
-    price: int = Field(description="美食价格,单位：元")
+    food_name: str = Field(description="美食/餐厅名称")
+    price: Optional[int] = Field(default=None, description="人均参考价,单位：元（高德未提供时为 None）")
     cuisine: Optional[str] = Field(default=None, description="美食类型,菜系如：中餐、西餐、日餐等")
+    score: Optional[float] = Field(default=None, description="评分（0-5，高德未提供时为 None）")
+    address: Optional[str] = Field(default=None, description="餐厅地址")
 
 class FoodSearchOutput(BaseModel):
-    recommend_foods: List[SingleFoodItem] = Field(description="美食列表")
+    recommend_foods: List[SingleFoodItem] = Field(default_factory=list, description="美食列表")
     city: str = Field(description="目标城市")
+    cuisine: Optional[str] = Field(default=None, description="查询的菜系")
     total_suggest: Optional[str] = Field(default=None, description="美食的总体建议")
 
 

@@ -17,7 +17,10 @@ from mcp_tools.schemas import (
     SigleHotelItem, 
     RoutePlanParms,
     AmapWeatherResponse,
-    HotelSearchOutput
+    HotelSearchOutput,
+    FoodSearchParms,
+    SingleFoodItem,
+    FoodSearchOutput,
 )
 from mcp_tools.routeSchemas import RouteSpot, SimplifyDriveRoute,RouteDaySegment, SpotPhoto
 # 高德 POI 大类编码：110000=风景名胜（060000 实为购物服务，会导致景点全是商场）
@@ -680,6 +683,110 @@ class HotelSearchMCP(BaseMCP):
             parts.append(f"按入住 {params.stay_days} 天安排，请结合报价核算总预算。")
         if params.price_min is not None or params.price_max is not None:
             parts.append("列表已优先展示有报价的酒店，其余按评分排序。")
+        else:
+            parts.append("列表已按评分从高到低排序。")
+        return "".join(parts)
+
+
+class FoodSearchMCP(BaseMCP):
+    """美食查询：按城市 + 菜系搜索餐饮 POI（名称/人均/菜系/评分/地址）"""
+    name: str = "food_mcp"
+    description: str = "输入城市+菜系+人均预算，返回餐饮推荐（名称/人均/菜系/评分/地址）"
+    # 高德 POI 大类编码：050000=餐饮服务
+    FOOD_TYPE = "050000"
+    # 最多返回餐厅数
+    TOP_N = 5
+
+    @staticmethod
+    def clean_food_poi(poi: dict, cuisine: Optional[str] = None) -> Optional[SingleFoodItem]:
+        """高德 POI → SingleFoodItem
+
+        biz_ext.rating 是评分、biz_ext.cost 是人均参考价。
+        高德多数餐厅不返回报价（cost 为空），此时 price 置 None，绝不编造价格。
+        """
+        name = poi.get("name")
+        if not name:
+            return None
+        biz = poi.get("biz_ext") or {}
+        rating = biz.get("rating")
+        cost = biz.get("cost")
+        # type 形如「餐饮服务;中餐厅;杭帮菜」，末段最贴近具体菜系
+        type_segments = [s for s in (poi.get("type") or "").split(";") if s]
+        cuisine_label = type_segments[-1] if len(type_segments) >= 2 else (cuisine or None)
+        return SingleFoodItem(
+            food_name=name,
+            price=int(float(cost)) if cost else None,
+            cuisine=cuisine_label,
+            score=float(rating) if rating else None,
+            address=poi.get("address") or None,
+        )
+
+    @staticmethod
+    def in_budget(price: Optional[int], budget: Optional[int]) -> bool:
+        """无报价（price 为 None）视为价格不确定，保留；有报价时不得超过人均预算"""
+        if price is None or budget is None:
+            return True
+        return price <= budget
+
+    async def execute(self, params: FoodSearchParms) -> FoodSearchOutput:
+        # 1. 关键词搜索餐饮 POI：高德 place/text 不支持人均预算参数，预算只能本地过滤
+        req_params = {
+            "key": AMAP_KEY,
+            "city": params.city,
+            "types": self.FOOD_TYPE,
+            "keywords": params.cuisine or "美食",
+            "offset": 25,
+            "extensions": "all",
+            "output": "json",
+        }
+        res = requests.get(
+            "https://restapi.amap.com/v3/place/text", params=req_params
+        ).json()
+        if res.get("status") != "1":
+            raise ValueError(f"高德餐饮搜索返回错误：{res.get('info', res)}")
+
+        # 2. 清洗 POI 并按人均预算过滤（无报价的保留，避免过滤后为空）
+        foods: List[SingleFoodItem] = []
+        for poi in res.get("pois", []):
+            item = self.clean_food_poi(poi, params.cuisine)
+            if not item:
+                continue
+            if not self.in_budget(item.price, params.budget):
+                continue
+            foods.append(item)
+
+        # 3. 排序取前 N：限定预算时优先展示有报价的（否则会全被无报价的挤掉），
+        #    其余情况按评分降序，有评分的排在无评分之前
+        if params.budget is not None:
+            foods.sort(key=lambda f: (f.price is not None, f.score or 0.0), reverse=True)
+        else:
+            foods.sort(key=lambda f: (f.score is not None, f.score or 0.0), reverse=True)
+        foods = foods[: self.TOP_N]
+
+        return FoodSearchOutput(
+            recommend_foods=foods,
+            city=params.city,
+            cuisine=params.cuisine,
+            total_suggest=self.build_suggest(params, foods),
+        )
+
+    @staticmethod
+    def build_suggest(params: FoodSearchParms, foods: List[SingleFoodItem]) -> str:
+        """生成美食总体建议（不编造价格，缺报价时明确说明）"""
+        scope = f"{params.city}{params.cuisine}" if params.cuisine else params.city
+        if not foods:
+            return f"未在{scope}找到符合条件的餐厅，可尝试更换菜系关键词或放宽人均预算。"
+        parts = [f"已在{scope}找到 {len(foods)} 家餐饮推荐。"]
+        priced = [f.price for f in foods if f.price is not None]
+        if priced:
+            if min(priced) == max(priced):
+                parts.append(f"高德提供的人均参考价约 {priced[0]} 元。")
+            else:
+                parts.append(f"高德提供的人均参考价约 {min(priced)}-{max(priced)} 元。")
+        else:
+            parts.append("高德未提供这些餐厅的人均报价，价格请以实际消费为准。")
+        if params.budget is not None:
+            parts.append(f"已按人均 {params.budget} 元以内筛选，并优先展示有报价的餐厅。")
         else:
             parts.append("列表已按评分从高到低排序。")
         return "".join(parts)
