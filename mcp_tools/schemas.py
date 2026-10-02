@@ -99,11 +99,29 @@ class WeatherOutputParms(BaseModel):
 
 #预算计算
 class BudgetSearchParms(BaseModel):
-    traffic_cost:int=Field(description="交通成本,单位：元")
-    hotel_cost:int=Field(description="酒店成本,单位：元")
-    food_cost:int=Field(description="美食成本,单位：元")
-    tick_cost:int=Field(description="景点门票成本,单位：元")
-    food_cost:int=Field(description="美食成本,单位：元")
+    traffic_cost: Optional[int] = Field(default=None, description="交通成本合计,单位：元（未提供可不传）")
+    hotel_cost: Optional[int] = Field(default=None, description="酒店成本合计,单位：元（未提供可不传）")
+    food_cost: Optional[int] = Field(default=None, description="美食成本合计,单位：元（未提供可不传）")
+    tick_cost: Optional[int] = Field(default=None, description="景点门票成本合计,单位：元（未提供可不传）")
+    people: Optional[int] = Field(default=1, description="出行人数,用于计算人均预算,默认1人")
+    travel_days: Optional[int] = Field(default=None, description="出行天数,可选,用于计算日均预算")
+
+
+class BudgetBreakdownItem(BaseModel):
+    """单项费用及其占总预算的比例"""
+    item_name: str = Field(description="费用项名称,如：交通")
+    cost: int = Field(description="该项费用,单位：元")
+    ratio: float = Field(description="占总预算的比例,保留4位小数,如 0.381")
+
+
+class BudgetSearchOutput(BaseModel):
+    total_cost: int = Field(description="总预算,单位：元")
+    people: int = Field(description="出行人数")
+    per_person_cost: float = Field(description="人均预算,单位：元,保留2位小数")
+    daily_average: Optional[float] = Field(default=None, description="日均预算,单位：元（提供天数时才有）")
+    breakdown: List[BudgetBreakdownItem] = Field(default_factory=list, description="各项费用明细与占比（按金额降序）")
+    missing_items: List[str] = Field(default_factory=list, description="用户未提供的费用项")
+    suggest: Optional[str] = Field(default=None, description="预算总体建议")
 
 #=======结构化输出模型（强制大模型返回标准JSON)
 class SigleHotelItem(BaseModel):
