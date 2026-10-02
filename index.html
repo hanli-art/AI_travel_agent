@@ -3,102 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI旅行规划大师智能体</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f4f7f6;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-    .chat-container {
-      width: 400px;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      height: 600px;
-    }
-    .chat-header {
-      background: #007bff;
-      color: white;
-      padding: 15px;
-      text-align: center;
-      font-size: 1.2em;
-      font-weight: bold;
-    }
-    .chat-box {
-      flex: 1;
-      padding: 15px;
-      overflow-y: auto;
-      background: #e9ecef;
-    }
-    .message {
-      margin-bottom: 15px;
-      padding: 10px 15px;
-      border-radius: 20px;
-      max-width: 75%;
-      word-wrap: break-word;
-    }
-    .message.user {
-      background: #007bff;
-      color: white;
-      align-self: flex-end;
-      margin-left: auto;
-      border-bottom-right-radius: 5px;
-    }
-    .message.bot {
-      background: #ffffff;
-      color: #333;
-      border-bottom-left-radius: 5px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
-    .input-area {
-      display: flex;
-      padding: 10px;
-      border-top: 1px solid #ddd;
-      background: white;
-    }
-    .input-area input {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 20px;
-      outline: none;
-      margin-right: 10px;
-    }
-    .input-area button {
-      background: #007bff;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 20px;
-      cursor: pointer;
-    }
-    .input-area button:hover {
-      background: #0056b3;
-    }
-  </style>
+  <title>AI旅游智能助手</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <div class="chat-container">
-    <div class="chat-header">旅行规划大师智能体</div>
-    <div class="chat-box" id="chat-box">
-      <!-- 初始欢迎语 -->
-      <div class="message bot">你好！我是你的旅行规划大师，请问你想去哪里？</div>
-    </div>
-    <div class="input-area">
-      <input type="text" id="message-input" placeholder="请输入您的旅行需求..." autocomplete="off">
-      <button id="send-btn">发送</button>
-    </div>
+  <div class="app">
+    <!-- 左侧会话栏 -->
+    <aside class="sidebar">
+      <button class="new-chat-btn" id="new-chat-btn">＋ 新建对话</button>
+      <div class="session-list" id="session-list"></div>
+    </aside>
+
+    <!-- 右侧主区 -->
+    <main class="main">
+      <h1 class="main-title">AI旅游智能助手</h1>
+
+      <div class="chat-card">
+        <div class="chat-box" id="chat-box"></div>
+        <button class="scroll-bottom-btn" id="scroll-bottom-btn" title="回到底部">↓</button>
+      </div>
+
+      <div class="input-area">
+        <input type="text" id="message-input"
+               placeholder="问我：北京3日游路线、上海酒店推荐、广州到成都机票..."
+               autocomplete="off">
+        <button id="send-btn">发送</button>
+      </div>
+    </main>
   </div>
 
-  <!-- 引入 app.js -->
+  <script src="/static/js/markdown.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

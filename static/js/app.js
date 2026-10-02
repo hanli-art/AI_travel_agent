@@ -1,74 +1,229 @@
-document.addEventListener("DOMContentLoaded", () => {
-    const sendBtn = document.getElementById("send-btn");
-    const messageInput = document.getElementById("message-input");
-    const chatBox = document.getElementById("chat-box");
+/**
+ * AI旅游智能助手 前端交互
+ * P1：视频同款布局 + Markdown 渲染 + 图片显示 + 回到底部
+ * 会话数据暂存 localStorage（后端上下文隔离在 P2 实现）
+ */
+(function () {
+  "use strict";
 
-    // 添加消息到对话框的函数
-    function addMessage(text, sender) {
-        const msgDiv = document.createElement("div");
-        msgDiv.className = `message ${sender}`;
-        msgDiv.textContent = text;
-        chatBox.appendChild(msgDiv);
-        // 自动滚动到底部
-        chatBox.scrollTop = chatBox.scrollHeight;
+  var STORAGE_KEY = "travel_agent_sessions_v1";
+  var TITLE_MAX = 14;
+
+  var els = {
+    newChatBtn: document.getElementById("new-chat-btn"),
+    sessionList: document.getElementById("session-list"),
+    chatBox: document.getElementById("chat-box"),
+    scrollBottomBtn: document.getElementById("scroll-bottom-btn"),
+    input: document.getElementById("message-input"),
+    sendBtn: document.getElementById("send-btn"),
+  };
+
+  var state = {
+    sessions: [],
+    currentId: null,
+  };
+
+  function newId() {
+    return "s_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+  }
+
+  /* ---------- 本地持久化 ---------- */
+
+  function save() {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ sessions: state.sessions, currentId: state.currentId })
+      );
+    } catch (e) {
+      console.warn("保存本地会话失败：", e);
     }
+  }
 
-    // 发送消息的核心函数
-    async function sendMessage() {
-        const text = messageInput.value.trim();
-        if (!text) return; // 如果为空则不发送
-
-        // 1. 在界面显示用户的消息
-        addMessage(text, "user");
-        messageInput.value = ""; // 清空输入框
-
-        // 2. 显示一个临时的“思考中”提示
-        const loadingDiv = document.createElement("div");
-        loadingDiv.className = "message bot";
-        loadingDiv.textContent = "正在规划中...";
-        chatBox.appendChild(loadingDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-
-        try {
-            // 3. 发送请求给 FastAPI 后端
-            const response = await fetch("/chat", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    message: text,
-                    user_id: "user_001" // 你的后端默认是 'user'，这里也可以传自定义
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`服务器错误: ${response.status}`);
-            }
-
-            // 4. 解析后端返回的 JSON
-            const data = await response.json();
-            
-            // 移除“正在规划中”的提示
-            chatBox.removeChild(loadingDiv);
-            
-            // 显示后端的回复
-            addMessage(data.reply || "抱歉，我没有收到有效回复。", "bot");
-
-        } catch (error) {
-            console.error("请求失败:", error);
-            chatBox.removeChild(loadingDiv);
-            addMessage("网络连接失败，请检查后端服务是否启动。", "bot");
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.sessions) && parsed.sessions.length) {
+          state.sessions = parsed.sessions;
+          state.currentId = parsed.currentId || parsed.sessions[0].id;
+          return;
         }
+      }
+    } catch (e) {
+      console.warn("读取本地会话失败：", e);
     }
+    state.sessions = [{ id: newId(), title: "新对话", messages: [] }];
+    state.currentId = state.sessions[0].id;
+    save();
+  }
 
-    // 绑定点击事件
-    sendBtn.addEventListener("click", sendMessage);
+  /* ---------- 会话操作 ---------- */
 
-    // 绑定回车键发送
-    messageInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            sendMessage();
-        }
+  function currentSession() {
+    for (var i = 0; i < state.sessions.length; i++) {
+      if (state.sessions[i].id === state.currentId) return state.sessions[i];
+    }
+    return null;
+  }
+
+  function createSession() {
+    var session = { id: newId(), title: "新对话", messages: [] };
+    state.sessions.unshift(session);
+    state.currentId = session.id;
+    save();
+    renderSessions();
+    renderMessages();
+    return session;
+  }
+
+  function switchSession(id) {
+    if (state.currentId === id) return;
+    state.currentId = id;
+    save();
+    renderSessions();
+    renderMessages();
+  }
+
+  function makeTitle(text) {
+    var t = text.replace(/\s+/g, " ").trim();
+    return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX) + "..." : t;
+  }
+
+  /* ---------- 渲染 ---------- */
+
+  function renderSessions() {
+    els.sessionList.innerHTML = "";
+    state.sessions.forEach(function (session) {
+      var item = document.createElement("div");
+      item.className = "session-item" + (session.id === state.currentId ? " active" : "");
+      item.textContent = session.title;
+      item.title = session.title;
+      item.addEventListener("click", function () {
+        switchSession(session.id);
+      });
+      els.sessionList.appendChild(item);
     });
-});
+  }
+
+  function createBubble(role, text) {
+    var bubble = document.createElement("div");
+    bubble.className = "message " + role;
+    if (role === "bot") {
+      bubble.innerHTML = MarkdownRenderer.render(text);
+      if (bubble.querySelector("table")) bubble.classList.add("wide");
+    } else {
+      bubble.textContent = text;
+    }
+    return bubble;
+  }
+
+  function scrollToBottom() {
+    els.chatBox.scrollTop = els.chatBox.scrollHeight;
+  }
+
+  function renderMessages() {
+    var session = currentSession();
+    els.chatBox.innerHTML = "";
+    if (!session) return;
+    session.messages.forEach(function (msg) {
+      els.chatBox.appendChild(createBubble(msg.role, msg.content));
+    });
+    scrollToBottom();
+  }
+
+  function appendBubble(role, text) {
+    var bubble = createBubble(role, text);
+    els.chatBox.appendChild(bubble);
+    scrollToBottom();
+    return bubble;
+  }
+
+  function setSending(sending) {
+    els.sendBtn.disabled = sending;
+    els.sendBtn.textContent = sending ? "规划中" : "发送";
+  }
+
+  /* ---------- 发送消息 ---------- */
+
+  async function sendMessage() {
+    var text = els.input.value.trim();
+    if (!text) return;
+
+    var session = currentSession() || createSession();
+
+    if (session.messages.length === 0) {
+      session.title = makeTitle(text);
+      renderSessions();
+    }
+
+    session.messages.push({ role: "user", content: text });
+    appendBubble("user", text);
+    els.input.value = "";
+    save();
+
+    var loading = appendBubble("bot", "正在规划中...");
+    loading.classList.add("thinking");
+    setSending(true);
+
+    try {
+      var response = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, user_id: "user_001" }),
+      });
+      if (!response.ok) throw new Error("服务器错误：" + response.status);
+
+      var data = await response.json();
+      var reply = (data && (data.reply || data.data)) || "抱歉，我没有收到有效回复。";
+
+      session.messages.push({ role: "bot", content: reply });
+      loading.classList.remove("thinking");
+      loading.innerHTML = MarkdownRenderer.render(reply);
+      if (loading.querySelector("table")) loading.classList.add("wide");
+      save();
+    } catch (error) {
+      console.error("请求失败：", error);
+      var errText = "网络连接失败，请检查后端服务是否启动。";
+      session.messages.push({ role: "bot", content: errText });
+      loading.classList.remove("thinking");
+      loading.textContent = errText;
+      save();
+    } finally {
+      setSending(false);
+      scrollToBottom();
+    }
+  }
+
+  /* ---------- 事件绑定 ---------- */
+
+  els.newChatBtn.addEventListener("click", function () {
+    createSession();
+    els.input.focus();
+  });
+
+  els.sendBtn.addEventListener("click", sendMessage);
+
+  els.input.addEventListener("keydown", function (e) {
+    // isComposing：避免中文输入法选词回车被误判为发送
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  els.chatBox.addEventListener("scroll", function () {
+    var distance = els.chatBox.scrollHeight - els.chatBox.scrollTop - els.chatBox.clientHeight;
+    els.scrollBottomBtn.classList.toggle("visible", distance > 60);
+  });
+
+  els.scrollBottomBtn.addEventListener("click", scrollToBottom);
+
+  /* ---------- 启动 ---------- */
+
+  load();
+  renderSessions();
+  renderMessages();
+  els.input.focus();
+})();

@@ -22,6 +22,10 @@ ENV/
 # ===== 大文件与临时产物 =====
 video/*.wmv
 video/frames/
+_server*.log
+
+# ===== 工具产物 =====
+.trae-html-share-packages/
 
 # ===== 编辑器与系统 =====
 .idea/
