@@ -24,10 +24,10 @@ from mcp_tools.routeSchemas import RouteSpot, SimplifyDriveRoute,RouteDaySegment
 SCENIC_TYPE = "110000"
 
 class GeomMCP(BaseMCP):
-    """地理编码：获取经纬度"""
+    """地理编码：获取经纬度 / adcode"""
     name: str = "geo_mcp"
     description: str = "输入城市+地址，返回经纬度"
-        
+
     async def execute(self, city: str, address: str = ""):
         url = "https://restapi.amap.com/v3/geocode/geo"
         req_params = {
@@ -42,26 +42,47 @@ class GeomMCP(BaseMCP):
         else:
             raise ValueError(f"高德地理编码返回错误：{res.get('info', res)}")
 
+    @staticmethod
+    async def get_adcode(city: str, address: str = "") -> str:
+        """返回城市 adcode
+
+        天气接口的 city 参数只认 adcode，传经纬度会报错，故单独提供。
+        高德地理编码要求 address 非空，只给城市名时会报 INVALID_PARAMS，故回退用城市名当地址。
+        """
+        url = "https://restapi.amap.com/v3/geocode/geo"
+        req_params = {
+            "key": AMAP_KEY,
+            "city": city,
+            "address": address or city,
+            "output": "json",
+        }
+        res = requests.get(url, params=req_params).json()
+        if res.get("status") == "1" and res.get("geocodes"):
+            return res["geocodes"][0]["adcode"]
+        raise ValueError(f"高德地理编码返回错误：{res.get('info', res)}")
+
 
 class WeatherMCP(BaseMCP):
-    """实时天气：获取城市实时天气"""
+    """天气查询：实时天气（base）+ 未来预报（all）"""
     name: str = "weather_mcp"
-    description: str = "输入城市，返回实时天气"
+    description: str = "输入城市+地址+查询类型，返回实时天气或未来预报"
 
-    async def execute(self, city:str,address:str)->AmapWeatherResponse:
-        location =await GeomMCP().execute(city,address)
-        
-        url="https://restapi.amap.com/v3/weather/now"
-        params={
-            "key":AMAP_KEY,
-            "city":location,
-            "output":"json"
+    async def execute(
+        self, city: str, address: str = "", extensions: str = "base"
+    ) -> AmapWeatherResponse:
+        """extensions: base=实时天气(lives)，all=未来预报(forecasts)"""
+        adcode = await GeomMCP.get_adcode(city, address)
+        url = "https://restapi.amap.com/v3/weather/weatherInfo"
+        params = {
+            "key": AMAP_KEY,
+            "city": adcode,
+            "extensions": extensions,
+            "output": "json",
         }
-        res=requests.get(url,params=params).json()
-        if res.get("status")=="1":
-            return AmapWeatherResponse.model_validate(res["now"])
-        else:
-            raise ValueError(f"高德地图返回错误：{res['info']}")
+        res = requests.get(url, params=params).json()
+        if res.get("status") == "1":
+            return AmapWeatherResponse.model_validate(res)
+        raise ValueError(f"高德天气接口返回错误：{res.get('info', res)}")
 
         
 class RoutePlanMCP(BaseMCP):
