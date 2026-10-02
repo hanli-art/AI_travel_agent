@@ -185,4 +185,62 @@ class RoutePlanOutput(BaseModel):
     total_time_hour: float
     route_tips: str = Field(description="路线避坑、出行小贴士")
 
+
+# ====================== 交通查询（聚合数据） ======================
+# 火车票查询入参
+class TrainSearchParms(BaseModel):
+    departure_station: str = Field(description="出发站或城市名,如：杭州、杭州东")
+    arrival_station: str = Field(description="到达站或城市名,如：福州、福州南")
+    date: str = Field(description="出发日期,格式 YYYY-MM-DD,仅支持未来15天内")
+    train_filter: Optional[str] = Field(default=None, description="车次类型筛选,如：G(高铁)、D(动车),可组合如GD")
+    departure_time_range: Optional[str] = Field(default=None, description="出发时段：凌晨/上午/下午/晚上")
+
+
+class SingleTrainItem(BaseModel):
+    train_no: str = Field(description="车次号,如：G25")
+    departure_station: str = Field(description="出发站,如：杭州东")
+    arrival_station: str = Field(description="到达站,如：福州南")
+    departure_time: str = Field(description="出发时间,如：18:04")
+    arrival_time: str = Field(description="到达时间,如：22:32")
+    duration: str = Field(description="历时,如：04:28")
+    price_info: List[str] = Field(default_factory=list, description="各席别票价,如：二等座 ¥73")
+    train_flags: List[str] = Field(default_factory=list, description="列车标签,如：复兴号、静音车厢")
+    bookable: bool = Field(default=False, description="12306 上是否可预定")
+
+
+class TrainSearchOutput(BaseModel):
+    departure_station: str = Field(description="出发站")
+    arrival_station: str = Field(description="到达站")
+    date: str = Field(description="出发日期")
+    trains: List[SingleTrainItem] = Field(default_factory=list, description="火车班次列表")
+    total_suggest: Optional[str] = Field(default=None, description="购票总体建议")
+
+
+# 航班查询入参
+class FlightSearchParms(BaseModel):
+    departure_city: str = Field(description="出发城市,如：杭州,或 IATA 三字码如 HGH")
+    arrival_city: str = Field(description="到达城市,如：北京,或 IATA 三字码如 BJS")
+    date: str = Field(description="出发日期,格式 YYYY-MM-DD")
+    direct_only: bool = Field(default=False, description="是否只看直飞")
+
+
+class SingleFlightItem(BaseModel):
+    airline_name: str = Field(description="航空公司名称")
+    flight_no: str = Field(description="航班号,如：CA0953")
+    departure_airport: str = Field(description="出发机场名称")
+    arrival_airport: str = Field(description="到达机场名称")
+    departure_time: str = Field(description="出发时间,如：09:05")
+    arrival_time: str = Field(description="到达时间,如：11:20")
+    duration: str = Field(description="航班时长,如：02h15m")
+    transfer_num: int = Field(default=1, description="航段数量,1 表示直飞,大于 1 表示需转机")
+    price: Optional[float] = Field(default=None, description="参考票价,单位：元")
+
+
+class FlightSearchOutput(BaseModel):
+    departure_city: str = Field(description="出发城市")
+    arrival_city: str = Field(description="到达城市")
+    date: str = Field(description="出发日期")
+    flights: List[SingleFlightItem] = Field(default_factory=list, description="航班列表")
+    total_suggest: Optional[str] = Field(default=None, description="出行总体建议")
+
     
